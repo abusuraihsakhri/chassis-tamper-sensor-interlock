@@ -1,0 +1,12 @@
+{
+  "device_id": "HSM-CHASSIS-SEC-01",
+  "timestamp": 1700000005,
+  "microswitch_open": false,
+  "mesh_resistance_ohms": 1000.0,
+  "internal_light_lux": 0.0,
+  "accelerometer_g": 0.05,
+  "temperature_c": 24.8,
+  "magnetic_field_gauss": 0.45,
+  "rail_voltage_v": 3.302,
+  "backup_battery_v": 3.05
+}

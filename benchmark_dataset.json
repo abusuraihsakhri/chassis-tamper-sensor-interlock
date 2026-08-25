@@ -1,0 +1,61 @@
+[
+  {
+    "benchmark_id": "TAMPER-BENCH-01",
+    "description": "Nominal Armed Security State",
+    "inputs": {
+      "microswitch_open": false,
+      "mesh_resistance_ohms": 1000.0,
+      "internal_light_lux": 0.0,
+      "accelerometer_g": 0.1,
+      "temperature_c": 25.0,
+      "magnetic_field_gauss": 0.5,
+      "rail_voltage_v": 3.30,
+      "backup_battery_v": 3.00
+    },
+    "expected": {
+      "interlock_state": "ARMED_SECURE",
+      "overall_severity": "NONE",
+      "is_breached": false,
+      "requires_zeroization": false
+    }
+  },
+  {
+    "benchmark_id": "TAMPER-BENCH-02",
+    "description": "Critical Lid Intrusion & Optical Sensor Breach",
+    "inputs": {
+      "microswitch_open": true,
+      "mesh_resistance_ohms": 1000.0,
+      "internal_light_lux": 25.0,
+      "accelerometer_g": 0.8,
+      "temperature_c": 25.0,
+      "magnetic_field_gauss": 0.5,
+      "rail_voltage_v": 3.30,
+      "backup_battery_v": 3.00
+    },
+    "expected": {
+      "interlock_state": "ZEROIZED_LOCKDOWN",
+      "overall_severity": "CRITICAL_BREACH",
+      "is_breached": true,
+      "requires_zeroization": true
+    }
+  },
+  {
+    "benchmark_id": "TAMPER-BENCH-03",
+    "description": "Cryogenic SRAM Freeze Attack (-35 C)",
+    "inputs": {
+      "microswitch_open": false,
+      "mesh_resistance_ohms": 1000.0,
+      "internal_light_lux": 0.0,
+      "accelerometer_g": 0.0,
+      "temperature_c": -35.0,
+      "magnetic_field_gauss": 0.5,
+      "rail_voltage_v": 3.30,
+      "backup_battery_v": 3.00
+    },
+    "expected": {
+      "interlock_state": "ZEROIZED_LOCKDOWN",
+      "is_breached": true,
+      "requires_zeroization": true
+    }
+  }
+]

@@ -1,0 +1,6 @@
+timestamp,microswitch_open,mesh_resistance_ohms,internal_light_lux,accelerometer_g,temperature_c,magnetic_field_gauss,rail_voltage_v,backup_battery_v
+1700000000,0,1000.0,0.0,0.1,25.0,0.5,3.30,3.00
+1700000005,1,1000.0,12.0,0.2,25.2,0.6,3.30,3.00
+1700000010,0,2500.0,0.0,4.8,26.0,0.5,3.29,3.00
+1700000015,0,1000.0,0.0,0.1,-35.0,0.5,3.30,3.00
+1700000020,0,1000.0,0.0,0.1,25.0,0.5,3.30,2.10
