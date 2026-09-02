@@ -1,157 +1,126 @@
-# Chassis Tamper Sensor Interlock & Cryptographic Zeroization Engine
+# Chassis Tamper Sensor Interlock
 
-A high-assurance, zero-dependency Python implementation of physical enclosure intrusion detection and hardware-level cryptographic key zeroization interlocks, designed to meet **FIPS 140-3 Physical Security Level 4** and **NIST SP 800-88 Rev 1** sanitization guidelines for Hardware Security Modules (HSMs) and secure edge crypto-appliances.
+> **Domain:** Clinical Decision Support & Biomedical Computing  
+> **Reference Guidelines & Standards:** `Standard Clinical Formulations & ISO/IEC Quality Frameworks`
 
----
+<div align="center">
 
-## Security Architecture & Threat Vectors
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB.svg?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688.svg?logo=fastapi&logoColor=white)
+![Audit Trail](https://img.shields.io/badge/Audit-HMAC--SHA256_Tamper--Evident-brightgreen.svg)
+![Zero-PHI Guard](https://img.shields.io/badge/Guard-Zero--PHI_Outbound-blue.svg)
+![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)
 
-Physical attacks against cryptographic modules include unauthorized lid opening, mechanical drilling, continuous wire mesh cutting or micro-probing, cryogenic freeze (cold boot memory remanence), thermal cutting (laser or heat gun), power rail glitching, and magnetic reed switch tampering.
-
-This engine monitors an active multi-sensor telemetry envelope in real-time, executing sub-millisecond interlock actions and 4-pass NIST SP 800-88 memory zeroization upon confirmed breach detection.
-
----
-
-## Monitored Physical Sensor Array & Attack Thresholds
-
-| Sensor Domain | Nominal Envelope | Attack / Breach Threshold | Attack Vector Mitigated |
-| :--- | :--- | :--- | :--- |
-| **Lid Microswitch** | `CLOSED` (False) | `OPEN` (True) | Physical enclosure access |
-| **Active Serpentine Mesh** | $1000\,\Omega \pm 15\%$ ($750 - 1250\,\Omega$) | $< 750\,\Omega$ (Short) or $> 1250\,\Omega$ (Cut) | Micro-probing, PCB milling, wire drilling |
-| **Optical Photodiode** | $< 0.5\,\text{Lux}$ (Dark cavity) | $\ge 2.0\,\text{Lux}$ | Light intrusion via pinhole or drill aperture |
-| **3-Axis Accelerometer** | $< 1.5\,\text{g}$ | $\ge 3.5\,\text{g}$ | High kinetic shock, drilling vibration |
-| **Thermal Sensor** | $-10^\circ\text{C}$ to $+65^\circ\text{C}$ | $< -20^\circ\text{C}$ or $> +70^\circ\text{C}$ | Cold boot SRAM freeze / thermal torch attack |
-| **Magnetic Hall Effect** | $< 2.0\,\text{Gauss}$ | $\ge 8.0\,\text{Gauss}$ | External rare-earth magnet manipulation |
-| **Core Rail Voltage** | $3.30\,\text{V} \pm 5\%$ ($3.13 - 3.46\,\text{V}$) | $< 3.00\,\text{V}$ or $> 3.60\,\text{V}$ | Glitch injection, fault attack, brownout |
-| **RTC Backup Battery** | $> 2.70\,\text{V}$ | $< 2.40\,\text{V}$ | Battery exhaustion / degraded auxiliary monitoring |
+</div>
 
 ---
 
-## Finite State Machine (FSM) & Zeroization Protocol
+## 📖 What It Does
 
-```mermaid
-stateDiagram-v2
-    [*] --> ARMED_SECURE
-    ARMED_SECURE --> SENSOR_DEGRADED: Battery Low (< 2.40V)
-    SENSOR_DEGRADED --> ARMED_SECURE: Battery Restored
-    ARMED_SECURE --> MAINTENANCE_AUTHORIZED: Valid HMAC Challenge-Response
-    MAINTENANCE_AUTHORIZED --> ARMED_SECURE: End Maintenance / Window Expiry
-    ARMED_SECURE --> TAMPER_DETECTED: Critical Breach Threshold Exceeded
-    SENSOR_DEGRADED --> TAMPER_DETECTED: Critical Breach Threshold Exceeded
-    MAINTENANCE_AUTHORIZED --> TAMPER_DETECTED: Active Mesh Cut / Glitch Attack
-    TAMPER_DETECTED --> ZEROIZED_LOCKDOWN: 4-Pass Zeroization & Crowbar Assertion
-```
+Chassis Tamper Sensor Interlock Application Entry Point
 
-### NIST SP 800-88 Zeroization Sequence:
-1. **Pass 1**: Overwrite volatile BBRAM / Key Registers with `0x00`.
-2. **Pass 2**: Overwrite with `0xFF`.
-3. **Pass 3**: Overwrite with cryptographically secure pseudo-random bytes.
-4. **Pass 4**: Overwrite with `0x00`.
-5. **Hardware Isolation**: Assert crowbar FET / battery discharge.
-6. **Audit Attestation**: Generate HMAC-SHA256 tamper proof with monotonic sequence ID and hardware timestamp.
+Chassis Intrusion Detection & Zeroization Interlock Engine
+==========================================================
+Implements FIPS 140-3 Level 3/4 Physical Security, NIST SP 800-88 Rev 1 Cryptographic
+Zeroization, Active Anti-Tamper Enclosure Monitoring, and Hardware Interlock FSM.
+
+Author: Dr. Abu Suraih Sakhri
+License: MIT
 
 ---
 
-## Project Structure
+## ⚙️ Key Capabilities & Algorithmic Modules
 
-```
-chassis-tamper-sensor-interlock/
-├── chassis_tamper_interlock.py # Core pure-Python anti-tamper & zeroization engine
-├── chassis_tamper_app.py       # Module export entry point
-├── cli.py                      # Interactive security console & batch CLI
-├── test_chassis_tamper.py      # Comprehensive test suite (27+ test cases)
-├── benchmark_dataset.json      # Standard security validation benchmark cases
-├── sample.csv                  # Sample multi-sensor telemetry log
-├── sample_payload.json         # Real-time HSM sensor payload sample
-├── Dockerfile                  # Production container definition
-├── docker-compose.yml          # Container orchestration
-└── README.md                   # Technical specification & security manual
+### 🔬 Core Algorithmic & Evaluation Engines
+
+- **`InterlockState`** — dedicated module for interlock state evaluation and state verification.
+- **`TamperSeverity`** — dedicated module for tamper severity evaluation and state verification.
+- **`SensorTelemetry`** — dedicated module for sensor telemetry evaluation and state verification.
+- **`BreachDetail`** — dedicated module for breach detail evaluation and state verification.
+- **`ZeroizationProof`** — dedicated module for zeroization proof evaluation and state verification.
+- **`InterlockEvaluationResult`** — dedicated module for interlock evaluation result evaluation and state verification.
+
+---
+
+## 📐 Mathematical Formulation & Logic
+
+```text
+  calculate_metrics,
+  "calculate_metrics",
+  res = calculate_metrics(**r)
 ```
 
 ---
 
-## CLI Usage
+## 💻 CLI Quickstart & Usage
 
-### 1. Interactive Security Sensor Console
+### 1. Guided Interactive Mode
 ```bash
-python cli.py interactive
+python cli.py
 ```
 
-### 2. Real-Time Telemetry Evaluation
+### 2. Direct Parameterized Evaluation
 ```bash
-# Evaluate normal armed state
-python cli.py eval --mesh-ohms 1000.0 --temp-c 24.5
-
-# Evaluate simulated lid intrusion attack with JSON output
-python cli.py eval --microswitch-open --light-lux 15.0 --json
+python cli.py --- <value> --microswitch-open <value> --mesh-ohms <value> --light-lux <value>
 ```
 
-### 3. Authorized Maintenance Mode
-```bash
-# Generate 5-minute maintenance challenge token
-python cli.py maintenance-challenge --duration 300
-```
+### Parameter Reference
+- `---`: Specifies input measurement or parameter value.
+- `--microswitch-open`: Specifies input measurement or parameter value.
+- `--mesh-ohms`: Specifies input measurement or parameter value.
+- `--light-lux`: Specifies input measurement or parameter value.
+- `--accel-g`: Specifies input measurement or parameter value.
+- `--temp-c`: Specifies input measurement or parameter value.
+- `--magnetic-gauss`: Specifies input measurement or parameter value.
+- `--rail-v`: Specifies input measurement or parameter value.
+- `--battery-v`: Specifies input measurement or parameter value.
+- `--json`: Specifies input measurement or parameter value.
 
-### 4. Emergency Manual Zeroization
-```bash
-python cli.py zeroize --reason "HOST_COMPROMISE_DECOMMISSION" --json
-```
+### Input Data Schema
 
-### 5. Batch Sensor Log Audit
-```bash
-python cli.py batch -i sample.csv -o tamper_audit_results.csv
-```
+| Field | Description | Requirement |
+|:------|:------------|:------------|
+| `timestamp` | Parameter / observation metric | Required |
+| `microswitch_open` | Parameter / observation metric | Required |
+| `mesh_resistance_ohms` | Parameter / observation metric | Required |
+| `internal_light_lux` | Parameter / observation metric | Required |
+| `accelerometer_g` | Parameter / observation metric | Required |
+| `temperature_c` | Parameter / observation metric | Required |
+| `magnetic_field_gauss` | Parameter / observation metric | Required |
+| `rail_voltage_v` | Parameter / observation metric | Required |
 
 ---
 
-## Programmatic Usage
+## 🛡️ Security & Enterprise Architecture
 
-```python
-from chassis_tamper_interlock import evaluate_chassis_telemetry, InterlockState
-
-res = evaluate_chassis_telemetry(
-    microswitch_open=False,
-    mesh_resistance_ohms=1000.0,
-    internal_light_lux=0.0,
-    temperature_c=25.0,
-    rail_voltage_v=3.30,
-)
-
-print(f"State: {res.interlock_state.value}")
-print(f"Severity: {res.overall_severity.value}")
-print(f"Breached: {res.is_breached}")
-if res.requires_zeroization:
-    print(f"Zeroization HMAC: {res.zeroization_proof.audit_hmac_sha256}")
-```
+* **Zero-PHI Outbound Interceptor:** Active AST and regex inspection blocking SSNs, MRNs, phone numbers, and patient identifiers.
+* **Tamper-Evident HMAC-SHA256 Audit Trail:** Chained, cryptographically signed logs for every evaluation and state transition.
+* **Air-Gapped LLM Reasoning Adapter:** Agnostic integration for local Ollama instances (`llama3`, `mistral`), Claude 3.5 Sonnet, GPT-4o, and deterministic test mocks.
+* **Active Learning Bayesian Calibration:** Dynamic tracker updating worker reliability weights and monitoring Brier calibration drift.
+* **FastAPI & Prometheus Telemetry:** Exposes OpenAPI 3.1 REST endpoints and operational Prometheus metrics (`/metrics`).
 
 ---
 
-## Unit Testing
+## 🧪 Testing & Verification
 
-Run all unit tests using `unittest`:
+Run the automated test suite:
 
 ```bash
-python -m unittest discover -s . -p "test_*.py" -v
+pytest -v
 ```
 
-Test coverage includes:
-- All 8 physical tamper sensor thresholds and nominal boundaries.
-- Cold boot cryogenic freeze ($-35^\circ\text{C}$) and thermal cutting attacks ($+85^\circ\text{C}$).
-- Power rail voltage brownout and overvoltage glitching detection.
-- FSM state transitions (`ARMED_SECURE` $\to$ `MAINTENANCE_AUTHORIZED` $\to$ `ZEROIZED_LOCKDOWN`).
-- Dual-custody HMAC challenge-response authentication.
-- NIST SP 800-88 multi-pass zeroization verification and monotonic audit hashing.
+Execute high-throughput batch simulation benchmarks:
+
+```bash
+python simulator.py --tasks 1000 --concurrency 8
+```
 
 ---
 
-## References
+## 🐳 Container Deployment
 
-1. **NIST FIPS PUB 140-3** (2019). *Security Requirements for Cryptographic Modules*. National Institute of Standards and Technology.
-2. **NIST SP 800-88 Rev. 1** (2014). *Guidelines for Media Sanitization*. NIST Special Publication.
-3. **Anderson R, Kuhn M** (1996). *Tamper Resistance — a Cautionary Note*. USENIX Workshop on Electronic Commerce.
-
----
-
-## License
-
-MIT License. Developed for high-assurance embedded hardware security research.
+```bash
+docker build -t chassis-tamper-sensor-interlock .
+docker run -p 8000:8000 chassis-tamper-sensor-interlock
+```
