@@ -1,4 +1,4 @@
-name: Chassis Tamper Sensor Interlock CI
+name: CI
 
 on:
   push:
@@ -21,6 +21,15 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Run Test Suite
+    - name: Install dependencies
       run: |
-        python -m unittest discover -s . -p "test_*.py" -v
+        python -m pip install --upgrade pip
+        pip install pytest
+
+    - name: Run Pytest Suite
+      run: |
+        pytest -v -p no:zarr
+
+    - name: Run CLI Batch Smoke Test
+      run: |
+        python cli.py batch -i sample.csv -o out_smoke.csv

@@ -1,126 +1,55 @@
-# Chassis Tamper Sensor Interlock
+# Chassis Tamper Sensor Interlock & Cryptographic Zeroization Engine
 
-> **Domain:** Clinical Decision Support & Biomedical Computing  
-> **Reference Guidelines & Standards:** `Standard Clinical Formulations & ISO/IEC Quality Frameworks`
-
-<div align="center">
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB.svg?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688.svg?logo=fastapi&logoColor=white)
-![Audit Trail](https://img.shields.io/badge/Audit-HMAC--SHA256_Tamper--Evident-brightgreen.svg)
-![Zero-PHI Guard](https://img.shields.io/badge/Guard-Zero--PHI_Outbound-blue.svg)
-![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)
-
-</div>
+> **Domain:** Hardware Security, Cryptographic Module Protection & Critical Infrastructure  
+> **Security Standards:** FIPS 140-3 Physical Security Level 4, NIST SP 800-88 Rev 1 (Guidelines for Media Sanitization), ISO/IEC 19790
 
 ---
 
-## 📖 What It Does
+## 📖 System Overview
 
-Chassis Tamper Sensor Interlock Application Entry Point
+The **Chassis Tamper Sensor Interlock** is a high-assurance physical security engine implementing FIPS 140-3 Level 4 envelope protection for cryptographic hardware modules (HSMs, secure enclaves, medical diagnostic units). It continuously monitors a multi-modal physical sensor array and executes deterministic finite state machine (FSM) transitions, triggering autonomous cryptographic zeroization when physical breach envelopes are crossed.
 
-Chassis Intrusion Detection & Zeroization Interlock Engine
-==========================================================
-Implements FIPS 140-3 Level 3/4 Physical Security, NIST SP 800-88 Rev 1 Cryptographic
-Zeroization, Active Anti-Tamper Enclosure Monitoring, and Hardware Interlock FSM.
+### Monitored Physical Sensor Array
 
-Author: Dr. Abu Suraih Sakhri
-License: MIT
-
----
-
-## ⚙️ Key Capabilities & Algorithmic Modules
-
-### 🔬 Core Algorithmic & Evaluation Engines
-
-- **`InterlockState`** — dedicated module for interlock state evaluation and state verification.
-- **`TamperSeverity`** — dedicated module for tamper severity evaluation and state verification.
-- **`SensorTelemetry`** — dedicated module for sensor telemetry evaluation and state verification.
-- **`BreachDetail`** — dedicated module for breach detail evaluation and state verification.
-- **`ZeroizationProof`** — dedicated module for zeroization proof evaluation and state verification.
-- **`InterlockEvaluationResult`** — dedicated module for interlock evaluation result evaluation and state verification.
-
----
-
-## 📐 Mathematical Formulation & Logic
-
-```text
-  calculate_metrics,
-  "calculate_metrics",
-  res = calculate_metrics(**r)
-```
+| Sensor Channel | Nominal Envelope | Breach Condition | Attack Vector Mitigated |
+|:---|:---|:---|:---|
+| **Microswitch Interlock** | `Closed` (0) | `Open` (1) | Physical lid/cover removal |
+| **Conductive Mesh Barrier** | $800\,\Omega \le R \le 1200\,\Omega$ | $R < 500\,\Omega \lor R > 1500\,\Omega$ | Drill-through, micro-probing, cutting |
+| **Internal Ambient Photodiode**| $< 0.5\text{ lux}$ | $\ge 2.0\text{ lux}$ | Light intrusion via chassis aperture |
+| **3-Axis Accelerometer** | $< 1.5\text{ g}$ | $\ge 4.0\text{ g}$ | Ballistic attack, physical extraction |
+| **Thermal Envelope** | $-20^\circ\text{C} \le T \le +70^\circ\text{C}$ | $T < -30^\circ\text{C} \lor T > +85^\circ\text{C}$ | Cryogenic attack, thermal probing |
+| **Hall-Effect Magnetometer** | $< 5.0\text{ Gauss}$ | $\ge 20.0\text{ Gauss}$ | Magnetic sensor spoofing / reed defeat |
+| **Power Rail & Battery** | $V_{rail} \ge 3.0\text{V}, V_{bat} \ge 2.5\text{V}$ | $V_{rail} < 2.7\text{V} \land V_{bat} < 2.2\text{V}$ | Brownout / power-glitching attack |
 
 ---
 
 ## 💻 CLI Quickstart & Usage
 
-### 1. Guided Interactive Mode
+### 1. Evaluate Sensor Array Telemetry
 ```bash
-python cli.py
+python cli.py telemetry --microswitch 0 --mesh 1000.0 --light 0.0 --accel 0.1 --temp 25.0 --battery 3.0
 ```
 
-### 2. Direct Parameterized Evaluation
+### 2. Interactive Sensor Simulation Console
 ```bash
-python cli.py --- <value> --microswitch-open <value> --mesh-ohms <value> --light-lux <value>
+python cli.py interactive
 ```
 
-### Parameter Reference
-- `---`: Specifies input measurement or parameter value.
-- `--microswitch-open`: Specifies input measurement or parameter value.
-- `--mesh-ohms`: Specifies input measurement or parameter value.
-- `--light-lux`: Specifies input measurement or parameter value.
-- `--accel-g`: Specifies input measurement or parameter value.
-- `--temp-c`: Specifies input measurement or parameter value.
-- `--magnetic-gauss`: Specifies input measurement or parameter value.
-- `--rail-v`: Specifies input measurement or parameter value.
-- `--battery-v`: Specifies input measurement or parameter value.
-- `--json`: Specifies input measurement or parameter value.
-
-### Input Data Schema
-
-| Field | Description | Requirement |
-|:------|:------------|:------------|
-| `timestamp` | Parameter / observation metric | Required |
-| `microswitch_open` | Parameter / observation metric | Required |
-| `mesh_resistance_ohms` | Parameter / observation metric | Required |
-| `internal_light_lux` | Parameter / observation metric | Required |
-| `accelerometer_g` | Parameter / observation metric | Required |
-| `temperature_c` | Parameter / observation metric | Required |
-| `magnetic_field_gauss` | Parameter / observation metric | Required |
-| `rail_voltage_v` | Parameter / observation metric | Required |
-
----
-
-## 🛡️ Security & Enterprise Architecture
-
-* **Zero-PHI Outbound Interceptor:** Active AST and regex inspection blocking SSNs, MRNs, phone numbers, and patient identifiers.
-* **Tamper-Evident HMAC-SHA256 Audit Trail:** Chained, cryptographically signed logs for every evaluation and state transition.
-* **Air-Gapped LLM Reasoning Adapter:** Agnostic integration for local Ollama instances (`llama3`, `mistral`), Claude 3.5 Sonnet, GPT-4o, and deterministic test mocks.
-* **Active Learning Bayesian Calibration:** Dynamic tracker updating worker reliability weights and monitoring Brier calibration drift.
-* **FastAPI & Prometheus Telemetry:** Exposes OpenAPI 3.1 REST endpoints and operational Prometheus metrics (`/metrics`).
-
----
-
-## 🧪 Testing & Verification
-
-Run the automated test suite:
-
+### 3. Immediate Cryptographic Zeroization Command
 ```bash
-pytest -v
+python cli.py zeroize
 ```
 
-Execute high-throughput batch simulation benchmarks:
-
+### 4. Batch Process Sensor Telemetry CSV Log
 ```bash
-python simulator.py --tasks 1000 --concurrency 8
+python cli.py batch -i sample.csv -o out_results.csv
 ```
 
 ---
 
-## 🐳 Container Deployment
+## 🧪 Verification & Testing
 
+Execute comprehensive unit and FSM integrity tests:
 ```bash
-docker build -t chassis-tamper-sensor-interlock .
-docker run -p 8000:8000 chassis-tamper-sensor-interlock
+python -m pytest -p no:zarr
 ```
