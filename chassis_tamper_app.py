@@ -1,7 +1,6 @@
-"""
-Chassis Tamper Sensor Interlock Application Entry Point
-"""
+"""Compatibility exports for the chassis tamper telemetry simulator."""
 from chassis_tamper_interlock import (
+    BreachDetail,
     ChassisInterlockController,
     InterlockEvaluationResult,
     InterlockState,
@@ -14,6 +13,7 @@ from chassis_tamper_interlock import (
 )
 
 __all__ = [
+    "BreachDetail",
     "ChassisInterlockController",
     "InterlockEvaluationResult",
     "InterlockState",

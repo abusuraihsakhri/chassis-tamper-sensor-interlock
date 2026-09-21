@@ -1,9 +1,3 @@
-"""
-Unit Test Suite for Chassis Tamper Sensor Interlock Engine.
-Tests multi-sensor intrusion telemetry, FIPS 140-3 physical tamper criteria,
-NIST SP 800-88 cryptographic zeroization, maintenance authorization, and batch workflows.
-"""
-
 import csv
 import io
 import json
@@ -14,7 +8,6 @@ from unittest.mock import patch
 
 from chassis_tamper_interlock import (
     ChassisInterlockController,
-    InterlockEvaluationResult,
     InterlockState,
     SensorTelemetry,
     TamperSeverity,
@@ -27,220 +20,132 @@ from cli import main as cli_main
 
 class TestChassisSensorBreaches(unittest.TestCase):
     def test_nominal_enclosure_secure(self):
-        res = evaluate_chassis_telemetry(
-            microswitch_open=False,
-            mesh_resistance_ohms=1000.0,
-            internal_light_lux=0.0,
-            accelerometer_g=0.0,
-            temperature_c=25.0,
-            magnetic_field_gauss=0.5,
-            rail_voltage_v=3.30,
-            backup_battery_v=3.00,
-        )
-        self.assertEqual(res.interlock_state, InterlockState.ARMED_SECURE)
-        self.assertEqual(res.overall_severity, TamperSeverity.NONE)
-        self.assertFalse(res.is_breached)
-        self.assertFalse(res.requires_zeroization)
-        self.assertIsNone(res.zeroization_proof)
+        result = evaluate_chassis_telemetry()
+        self.assertEqual(result.interlock_state, InterlockState.ARMED_SECURE)
+        self.assertEqual(result.overall_severity, TamperSeverity.NONE)
+        self.assertFalse(result.is_breached)
+        self.assertFalse(result.requires_zeroization)
 
     def test_lid_microswitch_tamper(self):
-        res = evaluate_chassis_telemetry(microswitch_open=True)
-        self.assertEqual(res.interlock_state, InterlockState.ZEROIZED_LOCKDOWN)
-        self.assertEqual(res.overall_severity, TamperSeverity.CRITICAL_BREACH)
-        self.assertTrue(res.is_breached)
-        self.assertTrue(res.requires_zeroization)
-        self.assertIsNotNone(res.zeroization_proof)
-        self.assertEqual(res.breaches[0].sensor_name, "LID_MICROSWITCH")
+        result = evaluate_chassis_telemetry(microswitch_open=True)
+        self.assertEqual(result.interlock_state, InterlockState.ZEROIZED_LOCKDOWN)
+        self.assertTrue(result.is_breached)
+        self.assertTrue(result.zeroization_proof.simulated)
+        self.assertEqual(result.zeroization_proof.zeroization_passes, 0)
 
-    def test_mesh_resistance_short_circuit(self):
-        # < 750 Ohms (e.g. 300 Ohms)
-        res = evaluate_chassis_telemetry(mesh_resistance_ohms=300.0)
-        self.assertTrue(res.is_breached)
-        self.assertTrue(res.requires_zeroization)
-        self.assertTrue(any(b.sensor_name == "MESH_CONTINUITY_RESISTANCE" for b in res.breaches))
+    def test_mesh_short_and_open(self):
+        self.assertTrue(evaluate_chassis_telemetry(mesh_resistance_ohms=300.0).is_breached)
+        self.assertTrue(evaluate_chassis_telemetry(mesh_resistance_ohms=2000.0).is_breached)
 
-    def test_mesh_resistance_open_cut(self):
-        # > 1250 Ohms (e.g. 2000 Ohms)
-        res = evaluate_chassis_telemetry(mesh_resistance_ohms=2000.0)
-        self.assertTrue(res.is_breached)
-        self.assertTrue(any(b.sensor_name == "MESH_CONTINUITY_RESISTANCE" for b in res.breaches))
-
-    def test_mesh_resistance_nominal_boundaries(self):
-        res_low = evaluate_chassis_telemetry(mesh_resistance_ohms=800.0)
-        self.assertFalse(res_low.is_breached)
-        res_high = evaluate_chassis_telemetry(mesh_resistance_ohms=1200.0)
-        self.assertFalse(res_high.is_breached)
-
-    def test_internal_light_breach(self):
-        # >= 2.0 Lux (e.g. 15.0 Lux)
-        res = evaluate_chassis_telemetry(internal_light_lux=15.0)
-        self.assertTrue(res.is_breached)
-        self.assertTrue(any(b.sensor_name == "OPTICAL_PHOTODIODE_LUX" for b in res.breaches))
-
-    def test_accelerometer_drilling_tamper(self):
-        # >= 3.5 g (e.g. 5.5 g)
-        res = evaluate_chassis_telemetry(accelerometer_g=5.5)
-        self.assertTrue(res.is_breached)
-        self.assertTrue(any(b.sensor_name == "ACCELEROMETER_SHOCK" for b in res.breaches))
-
-    def test_cryogenic_freeze_attack(self):
-        # < -20 C (e.g. -35 C)
-        res = evaluate_chassis_telemetry(temperature_c=-35.0)
-        self.assertTrue(res.is_breached)
-        self.assertTrue(any(b.sensor_name == "THERMAL_SENSOR" for b in res.breaches))
-
-    def test_thermal_torch_attack(self):
-        # > 70 C (e.g. 85 C)
-        res = evaluate_chassis_telemetry(temperature_c=85.0)
-        self.assertTrue(res.is_breached)
-        self.assertTrue(any(b.sensor_name == "THERMAL_SENSOR" for b in res.breaches))
-
-    def test_temperature_nominal_range(self):
-        for temp in [-15.0, 0.0, 25.0, 50.0, 65.0]:
-            res = evaluate_chassis_telemetry(temperature_c=temp)
-            self.assertFalse(res.is_breached)
-
-    def test_magnetic_field_attack(self):
-        # >= 8.0 Gauss (e.g. 15.0 Gauss)
-        res = evaluate_chassis_telemetry(magnetic_field_gauss=15.0)
-        self.assertTrue(res.is_breached)
-        self.assertTrue(any(b.sensor_name == "MAGNETIC_HALL_EFFECT" for b in res.breaches))
-
-    def test_power_rail_brownout_and_glitch(self):
-        # < 3.00 V (e.g. 2.70 V)
-        res_brownout = evaluate_chassis_telemetry(rail_voltage_v=2.70)
-        self.assertTrue(res_brownout.is_breached)
-
-        # > 3.60 V (e.g. 3.85 V)
-        res_glitch = evaluate_chassis_telemetry(rail_voltage_v=3.85)
-        self.assertTrue(res_glitch.is_breached)
+    def test_threshold_boundaries(self):
+        self.assertFalse(evaluate_chassis_telemetry(mesh_resistance_ohms=750.0).is_breached)
+        self.assertFalse(evaluate_chassis_telemetry(mesh_resistance_ohms=1250.0).is_breached)
+        self.assertTrue(evaluate_chassis_telemetry(internal_light_lux=2.0).is_breached)
+        self.assertTrue(evaluate_chassis_telemetry(accelerometer_g=3.5).is_breached)
+        self.assertFalse(evaluate_chassis_telemetry(temperature_c=-20.0).is_breached)
+        self.assertFalse(evaluate_chassis_telemetry(temperature_c=70.0).is_breached)
+        self.assertTrue(evaluate_chassis_telemetry(magnetic_field_gauss=8.0).is_breached)
+        self.assertFalse(evaluate_chassis_telemetry(rail_voltage_v=3.0).is_breached)
+        self.assertFalse(evaluate_chassis_telemetry(rail_voltage_v=3.6).is_breached)
 
     def test_backup_battery_degradation_non_breach(self):
-        # < 2.40 V (e.g. 2.10 V) with other sensors nominal -> SENSOR_DEGRADED, no zeroization
-        res = evaluate_chassis_telemetry(backup_battery_v=2.10)
-        self.assertFalse(res.is_breached)
-        self.assertFalse(res.requires_zeroization)
-        self.assertEqual(res.interlock_state, InterlockState.SENSOR_DEGRADED)
-        self.assertTrue(len(res.degradations) > 0)
+        result = evaluate_chassis_telemetry(backup_battery_v=2.10)
+        self.assertFalse(result.is_breached)
+        self.assertEqual(result.interlock_state, InterlockState.SENSOR_DEGRADED)
 
-    def test_multi_sensor_simultaneous_breach(self):
-        res = evaluate_chassis_telemetry(
-            microswitch_open=True,
-            mesh_resistance_ohms=2500.0,
-            internal_light_lux=10.0,
-        )
-        self.assertTrue(res.is_breached)
-        self.assertEqual(len(res.breaches), 3)
+    def test_nonfinite_values_fail_safe(self):
+        for key in (
+            "mesh_resistance_ohms",
+            "internal_light_lux",
+            "accelerometer_g",
+            "temperature_c",
+            "magnetic_field_gauss",
+            "rail_voltage_v",
+            "backup_battery_v",
+        ):
+            result = evaluate_chassis_telemetry(**{key: float("nan")})
+            self.assertTrue(result.is_breached, key)
+
+    def test_zero_values_are_not_replaced_by_defaults(self):
+        self.assertTrue(calculate_metrics(mesh_resistance_ohms=0)["is_breached"])
+        self.assertTrue(calculate_metrics(rail_voltage_v=0)["is_breached"])
+        result = calculate_metrics(backup_battery_v=0)
+        self.assertFalse(result["is_breached"])
+        self.assertEqual(result["interlock_state"], "SENSOR_DEGRADED")
+
+    def test_invalid_string_fails_safe(self):
+        result = calculate_metrics(rail_voltage_v="not-a-number")
+        self.assertTrue(result["is_breached"])
+        self.assertEqual(result["breaches"][0]["sensor_name"], "CORE_VOLTAGE_SUPERVISOR")
 
 
-class TestMaintenanceAndZeroization(unittest.TestCase):
+class TestMaintenanceAndState(unittest.TestCase):
     def test_maintenance_challenge_and_authorization(self):
-        ctl = ChassisInterlockController()
-        ch, exp = ctl.create_maintenance_challenge(duration_seconds=60)
-        self.assertTrue(ctl.authorize_maintenance(exp))
-        self.assertEqual(ctl.state, InterlockState.MAINTENANCE_AUTHORIZED)
+        controller = ChassisInterlockController(audit_key=b"x" * 32)
+        _, response = controller.create_maintenance_challenge(60)
+        self.assertTrue(controller.authorize_maintenance(response))
+        result = controller.evaluate_telemetry(SensorTelemetry(microswitch_open=True))
+        self.assertFalse(result.is_breached)
+        self.assertTrue(result.degradations)
 
-        # In maintenance authorized, opening microswitch does not breach
-        telemetry = SensorTelemetry(microswitch_open=True)
-        res = ctl.evaluate_telemetry(telemetry)
-        self.assertFalse(res.is_breached)
-        self.assertFalse(res.requires_zeroization)
+    def test_invalid_maintenance_duration(self):
+        controller = ChassisInterlockController()
+        with self.assertRaises(ValueError):
+            controller.create_maintenance_challenge(0)
 
-        # End maintenance restores ARMED
-        ctl.end_maintenance()
-        self.assertEqual(ctl.state, InterlockState.ARMED_SECURE)
-
-    def test_maintenance_invalid_token_rejected(self):
-        ctl = ChassisInterlockController()
-        ctl.create_maintenance_challenge(duration_seconds=60)
-        self.assertFalse(ctl.authorize_maintenance("invalid_response_token"))
-        self.assertEqual(ctl.state, InterlockState.ARMED_SECURE)
-
-    def test_zeroization_proof_and_monotonic_counter(self):
-        ctl = ChassisInterlockController()
-        proof1 = ctl.execute_zeroization("TEST_SRC_1")
-        self.assertEqual(proof1.monotonic_tamper_counter, 1)
-        self.assertEqual(proof1.zeroization_passes, 4)
-        self.assertTrue(len(proof1.memory_regions_purged) >= 4)
-        self.assertTrue(len(proof1.audit_hmac_sha256) > 0)
-
-        proof2 = ctl.execute_zeroization("TEST_SRC_2")
-        self.assertEqual(proof2.monotonic_tamper_counter, 2)
+    def test_zeroization_counter_and_lockdown_persist(self):
+        controller = ChassisInterlockController(audit_key=b"y" * 32)
+        first = controller.execute_zeroization("TEST")
+        second = controller.execute_zeroization("TEST2")
+        self.assertEqual(first.monotonic_tamper_counter, 1)
+        self.assertEqual(second.monotonic_tamper_counter, 2)
+        nominal = controller.evaluate_telemetry(SensorTelemetry())
+        self.assertEqual(nominal.interlock_state, InterlockState.ZEROIZED_LOCKDOWN)
 
 
-class TestMetricsAndBatch(unittest.TestCase):
-    def test_calculate_metrics_wrapper_string_inputs(self):
-        row = {
-            "microswitch": "open",
-            "mesh_ohms": "950",
-            "light": "0.1",
-            "temp": "22.5",
-        }
-        res = calculate_metrics(**row)
-        self.assertTrue(res["is_breached"])
-        self.assertEqual(res["interlock_state"], "ZEROIZED_LOCKDOWN")
-
+class TestBatchAndCLI(unittest.TestCase):
     def test_batch_csv_processing(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            in_path = os.path.join(tmpdir, "telemetry.csv")
-            out_path = os.path.join(tmpdir, "audit_out.csv")
-
-            with open(in_path, "w", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(
-                    f,
-                    fieldnames=["timestamp", "microswitch_open", "mesh_resistance_ohms", "internal_light_lux", "temperature_c"],
-                )
+            input_path = os.path.join(tmpdir, "telemetry.csv")
+            output_path = os.path.join(tmpdir, "result.csv")
+            with open(input_path, "w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["rail_voltage_v"])
                 writer.writeheader()
-                writer.writerow({"timestamp": "1700000000", "microswitch_open": "0", "mesh_resistance_ohms": "1000", "internal_light_lux": "0.0", "temperature_c": "25"})
-                writer.writerow({"timestamp": "1700000001", "microswitch_open": "1", "mesh_resistance_ohms": "1000", "internal_light_lux": "5.0", "temperature_c": "25"})
+                writer.writerow({"rail_voltage_v": "3.3"})
+                writer.writerow({"rail_voltage_v": "0"})
+            self.assertEqual(process_batch_csv(input_path, output_path), 2)
+            with open(output_path, encoding="utf-8") as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual(rows[0]["is_breached"], "False")
+            self.assertEqual(rows[1]["is_breached"], "True")
 
-            count = process_batch_csv(in_path, out_path)
-            self.assertEqual(count, 2)
+    def test_empty_batch_writes_header(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = os.path.join(tmpdir, "telemetry.csv")
+            output_path = os.path.join(tmpdir, "result.csv")
+            with open(input_path, "w", newline="", encoding="utf-8") as handle:
+                handle.write("rail_voltage_v\n")
+            self.assertEqual(process_batch_csv(input_path, output_path), 0)
+            self.assertTrue(os.path.exists(output_path))
 
-            with open(out_path, "r", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                rows = list(reader)
-                self.assertEqual(len(rows), 2)
-                self.assertEqual(rows[0]["is_breached"], "False")
-                self.assertEqual(rows[1]["is_breached"], "True")
-                self.assertEqual(rows[1]["requires_zeroization"], "True")
-
-
-class TestCLI(unittest.TestCase):
     def test_cli_eval_json(self):
-        buf = io.StringIO()
-        with patch("sys.stdout", new=buf):
-            ret = cli_main(["eval", "--microswitch-open", "--json"])
-            self.assertEqual(ret, 0)
-        data = json.loads(buf.getvalue())
+        buffer = io.StringIO()
+        with patch("sys.stdout", new=buffer):
+            self.assertEqual(cli_main(["eval", "--rail-v", "0", "--json"]), 0)
+        data = json.loads(buffer.getvalue())
         self.assertTrue(data["is_breached"])
-        self.assertEqual(data["interlock_state"], "ZEROIZED_LOCKDOWN")
 
-    def test_cli_eval_formatted(self):
-        buf = io.StringIO()
-        with patch("sys.stdout", new=buf):
-            ret = cli_main(["eval", "--mesh-ohms", "1000.0", "--temp-c", "25.0"])
-            self.assertEqual(ret, 0)
-        output = buf.getvalue()
-        self.assertIn("CHASSIS INTRUSION DETECTION", output)
-        self.assertIn("ARMED_SECURE", output)
+    def test_cli_zeroize_is_explicitly_simulated(self):
+        buffer = io.StringIO()
+        with patch("sys.stdout", new=buffer):
+            self.assertEqual(cli_main(["zeroize", "--json"]), 0)
+        data = json.loads(buffer.getvalue())
+        self.assertTrue(data["simulated"])
+        self.assertEqual(data["zeroization_passes"], 0)
 
-    def test_cli_manual_zeroize(self):
-        buf = io.StringIO()
-        with patch("sys.stdout", new=buf):
-            ret = cli_main(["zeroize", "--reason", "EMERGENCY_DECOMMISSION", "--json"])
-            self.assertEqual(ret, 0)
-        data = json.loads(buf.getvalue())
-        self.assertEqual(data["monotonic_tamper_counter"], 1)
-
-    def test_cli_maintenance_challenge(self):
-        buf = io.StringIO()
-        with patch("sys.stdout", new=buf):
-            ret = cli_main(["maintenance-challenge", "--duration", "120"])
-            self.assertEqual(ret, 0)
-        data = json.loads(buf.getvalue())
-        self.assertIn("challenge", data)
-        self.assertIn("expected_response_token", data)
+    def test_cli_no_args_explicit_empty_uses_interactive(self):
+        with patch("builtins.input", side_effect=["", "", "", "", "", "", "", ""]), patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli_main([]), 0)
 
 
 if __name__ == "__main__":

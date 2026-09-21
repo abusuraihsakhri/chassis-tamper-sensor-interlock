@@ -1,11 +1,8 @@
-"""
-Chassis Intrusion Detection & Zeroization Interlock Engine
-==========================================================
-Implements FIPS 140-3 Level 3/4 Physical Security, NIST SP 800-88 Rev 1 Cryptographic
-Zeroization, Active Anti-Tamper Enclosure Monitoring, and Hardware Interlock FSM.
+"""Chassis tamper telemetry simulator.
 
-Author: Dr. Abu Suraih Sakhri
-License: MIT
+This module evaluates simulated enclosure-sensor telemetry against configurable
+thresholds. It does not control hardware, erase real cryptographic material, or
+establish compliance/certification with FIPS 140-3 or NIST SP 800-88.
 """
 
 from __future__ import annotations
@@ -13,15 +10,12 @@ from __future__ import annotations
 import csv
 import hashlib
 import hmac
-import json
 import math
-import os
-import re
 import secrets
 import time
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class InterlockState(str, Enum):
@@ -42,13 +36,13 @@ class TamperSeverity(str, Enum):
 @dataclass
 class SensorTelemetry:
     microswitch_open: bool = False
-    mesh_resistance_ohms: float = 1000.0   # Nominal: 1000 +/- 150 Ohms
-    internal_light_lux: float = 0.0        # Nominal: < 0.5 Lux (dark enclosure)
-    accelerometer_g: float = 0.0           # Nominal: < 1.5 g (tamper/shock: > 3.5 g)
-    temperature_c: float = 25.0            # Nominal: -10 to +65 C
-    magnetic_field_gauss: float = 0.5      # Nominal: < 2.0 Gauss (magnet attack: > 10.0 G)
-    rail_voltage_v: float = 3.30           # Nominal: 3.30V +/- 5% (glitch: < 2.95V or > 3.65V)
-    backup_battery_v: float = 3.00         # Nominal: > 2.7V (low battery: < 2.5V)
+    mesh_resistance_ohms: float = 1000.0
+    internal_light_lux: float = 0.0
+    accelerometer_g: float = 0.0
+    temperature_c: float = 25.0
+    magnetic_field_gauss: float = 0.5
+    rail_voltage_v: float = 3.30
+    backup_battery_v: float = 3.00
 
 
 @dataclass
@@ -62,12 +56,19 @@ class BreachDetail:
 
 @dataclass
 class ZeroizationProof:
+    """Receipt for the simulator's zeroization event.
+
+    The receipt records what the simulator *would* mark as purged. It is not
+    proof that physical or virtual memory was erased.
+    """
+
     zeroized_timestamp: float
     memory_regions_purged: List[str]
     zeroization_passes: int
     zeroization_latency_us: float
     monotonic_tamper_counter: int
     audit_hmac_sha256: str
+    simulated: bool = True
 
 
 @dataclass
@@ -83,30 +84,25 @@ class InterlockEvaluationResult:
     system_log: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
-        d = asdict(self)
-        d["interlock_state"] = self.interlock_state.value
-        d["overall_severity"] = self.overall_severity.value
-        if self.breaches:
-            d["breaches"] = [
-                {
-                    "sensor_name": b.sensor_name if hasattr(b, "sensor_name") else b.get("sensor_name"),
-                    "observed_value": b.observed_value if hasattr(b, "observed_value") else b.get("observed_value"),
-                    "nominal_range": b.nominal_range if hasattr(b, "nominal_range") else b.get("nominal_range"),
-                    "severity": b.severity.value if hasattr(b.severity, "value") else str(b.get("severity")),
-                    "description": b.description if hasattr(b, "description") else b.get("description"),
-                }
-                for b in self.breaches
-            ]
-        return d
+        data = asdict(self)
+        data["interlock_state"] = self.interlock_state.value
+        data["overall_severity"] = self.overall_severity.value
+        data["breaches"] = [
+            {
+                "sensor_name": breach.sensor_name,
+                "observed_value": breach.observed_value,
+                "nominal_range": breach.nominal_range,
+                "severity": breach.severity.value,
+                "description": breach.description,
+            }
+            for breach in self.breaches
+        ]
+        return data
 
 
 class ChassisInterlockController:
-    """
-    Physical Security Interlock & Zeroization Controller compliant with FIPS 140-3 Level 4.
-    """
-    SECRET_AUDIT_KEY = b"FIPS_140_3_LEVEL_4_CHASSIS_AUTH_KEY_2026"
+    """Stateful controller for the telemetry and response simulation."""
 
-    # Sensor Operational Bounds
     MESH_OHMS_MIN = 750.0
     MESH_OHMS_MAX = 1250.0
     LIGHT_LUX_MAX = 2.0
@@ -118,26 +114,36 @@ class ChassisInterlockController:
     RAIL_V_MAX = 3.60
     BATTERY_V_MIN = 2.40
 
-    def __init__(self, initial_state: InterlockState = InterlockState.ARMED_SECURE):
+    def __init__(
+        self,
+        initial_state: InterlockState = InterlockState.ARMED_SECURE,
+        audit_key: Optional[bytes] = None,
+    ) -> None:
         self.state = initial_state
         self.monotonic_counter = 0
         self.maintenance_token: Optional[str] = None
-        self.maintenance_expiry: float = 0.0
+        self.maintenance_expiry = 0.0
+        self._audit_key = audit_key or secrets.token_bytes(32)
 
     def create_maintenance_challenge(self, duration_seconds: float = 300.0) -> Tuple[str, str]:
+        """Create a simulator challenge and its response token.
+
+        The response is intentionally returned because this is a local simulator,
+        not an authentication boundary. Production systems must use an external
+        authenticated maintenance mechanism and protected key material.
         """
-        Generates a cryptographic maintenance challenge and expected response token.
-        """
+        if not math.isfinite(duration_seconds) or duration_seconds <= 0:
+            raise ValueError("duration_seconds must be a positive finite number")
         challenge = secrets.token_hex(16)
-        expected_response = hmac.new(self.SECRET_AUDIT_KEY, challenge.encode("utf-8"), hashlib.sha256).hexdigest()
+        expected_response = hmac.new(
+            self._audit_key, challenge.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
         self.maintenance_token = expected_response
         self.maintenance_expiry = time.time() + duration_seconds
         return challenge, expected_response
 
     def authorize_maintenance(self, response_token: str) -> bool:
-        """
-        Validates maintenance token to transition into MAINTENANCE_AUTHORIZED mode.
-        """
+        """Validate the current simulator maintenance response token."""
         if not self.maintenance_token or time.time() > self.maintenance_expiry:
             return False
         if hmac.compare_digest(response_token.strip(), self.maintenance_token):
@@ -146,22 +152,14 @@ class ChassisInterlockController:
         return False
 
     def end_maintenance(self) -> None:
-        """Resets state to ARMED_SECURE after maintenance closure."""
         self.state = InterlockState.ARMED_SECURE
         self.maintenance_token = None
         self.maintenance_expiry = 0.0
 
     def execute_zeroization(self, trigger_source: str) -> ZeroizationProof:
-        """
-        Executes multi-pass cryptographic key destruction (NIST SP 800-88 Rev 1):
-        Pass 1: Overwrite with 0x00
-        Pass 2: Overwrite with 0xFF
-        Pass 3: Overwrite with cryptographically secure PRNG random bytes
-        Pass 4: Final overwrite with 0x00
-        """
-        t0 = time.perf_counter()
+        """Record a simulated zeroization event and return an integrity receipt."""
+        start = time.perf_counter()
         self.monotonic_counter += 1
-
         regions = [
             "BATTERY_BACKED_RAM_BBRAM",
             "AES_256_GCM_MASTER_KEY_REGISTERS",
@@ -169,190 +167,177 @@ class ChassisInterlockController:
             "ECDSA_SECP384R1_SESSION_SECRETS",
             "HARDWARE_ENTROPY_SEED_STORAGE",
         ]
-
-        # Simulate microsecond zeroization latency
-        latency_us = max(12.5, round((time.perf_counter() - t0) * 1e6, 2))
-
-        # Generate HMAC audit attestation proof
-        ts = time.time()
-        audit_payload = f"ZEROIZATION|COUNTER={self.monotonic_counter}|TS={ts}|SRC={trigger_source}|REGIONS={','.join(regions)}"
-        audit_hash = hmac.new(self.SECRET_AUDIT_KEY, audit_payload.encode("utf-8"), hashlib.sha256).hexdigest()
-
+        latency_us = max(12.5, round((time.perf_counter() - start) * 1e6, 2))
+        timestamp = time.time()
+        payload = (
+            f"SIMULATED_ZEROIZATION|COUNTER={self.monotonic_counter}|TS={timestamp}|"
+            f"SRC={trigger_source}|REGIONS={','.join(regions)}"
+        )
+        digest = hmac.new(self._audit_key, payload.encode("utf-8"), hashlib.sha256).hexdigest()
         self.state = InterlockState.ZEROIZED_LOCKDOWN
-
         return ZeroizationProof(
-            zeroized_timestamp=ts,
+            zeroized_timestamp=timestamp,
             memory_regions_purged=regions,
-            zeroization_passes=4,
+            zeroization_passes=0,
             zeroization_latency_us=latency_us,
             monotonic_tamper_counter=self.monotonic_counter,
-            audit_hmac_sha256=audit_hash,
+            audit_hmac_sha256=digest,
+            simulated=True,
         )
 
-    def evaluate_telemetry(self, t: SensorTelemetry) -> InterlockEvaluationResult:
-        """
-        Evaluates real-time sensor array against FIPS 140-3 physical tamper criteria.
-        """
+    @staticmethod
+    def _finite(value: float) -> bool:
+        return math.isfinite(value)
+
+    @staticmethod
+    def _invalid_breach(sensor_name: str, value: Any, nominal_range: str) -> BreachDetail:
+        return BreachDetail(
+            sensor_name=sensor_name,
+            observed_value=str(value),
+            nominal_range=nominal_range,
+            severity=TamperSeverity.CRITICAL_BREACH,
+            description="Invalid or non-finite telemetry received; treated as a fail-safe breach.",
+        )
+
+    def evaluate_telemetry(self, telemetry: SensorTelemetry) -> InterlockEvaluationResult:
         breaches: List[BreachDetail] = []
         degradations: List[str] = []
 
-        # If maintenance is active, suppress lid microswitch breach
-        if self.state == InterlockState.MAINTENANCE_AUTHORIZED:
-            if time.time() > self.maintenance_expiry:
-                self.state = InterlockState.ARMED_SECURE
-            else:
-                # In authorized maintenance, physical access is allowed
-                if t.microswitch_open:
-                    degradations.append("Lid microswitch open under authorized maintenance window.")
+        maintenance_active = self.state == InterlockState.MAINTENANCE_AUTHORIZED
+        if maintenance_active and time.time() > self.maintenance_expiry:
+            self.state = InterlockState.ARMED_SECURE
+            maintenance_active = False
+        elif maintenance_active and telemetry.microswitch_open:
+            degradations.append("Lid microswitch open during the authorized simulation window.")
 
-        # 1. Lid Microswitch Intrusion
-        if t.microswitch_open and self.state != InterlockState.MAINTENANCE_AUTHORIZED:
+        if telemetry.microswitch_open and not maintenance_active:
             breaches.append(
                 BreachDetail(
-                    sensor_name="LID_MICROSWITCH",
-                    observed_value=True,
-                    nominal_range="CLOSED (False)",
-                    severity=TamperSeverity.CRITICAL_BREACH,
-                    description="Physical chassis lid opened or interlock microswitch released.",
+                    "LID_MICROSWITCH",
+                    True,
+                    "CLOSED (False)",
+                    TamperSeverity.CRITICAL_BREACH,
+                    "Chassis lid open or interlock microswitch released.",
                 )
             )
 
-        # 2. Active Enclosure Wire Mesh Impedance
-        if t.mesh_resistance_ohms < self.MESH_OHMS_MIN:
-            breaches.append(
-                BreachDetail(
-                    sensor_name="MESH_CONTINUITY_RESISTANCE",
-                    observed_value=f"{t.mesh_resistance_ohms:.1f} Ohm",
-                    nominal_range=f"{self.MESH_OHMS_MIN:.1f} - {self.MESH_OHMS_MAX:.1f} Ohm",
-                    severity=TamperSeverity.CRITICAL_BREACH,
-                    description="Active mesh short-circuit detected (probe / conductive attack).",
-                )
-            )
-        elif t.mesh_resistance_ohms > self.MESH_OHMS_MAX:
-            breaches.append(
-                BreachDetail(
-                    sensor_name="MESH_CONTINUITY_RESISTANCE",
-                    observed_value=f"{t.mesh_resistance_ohms:.1f} Ohm",
-                    nominal_range=f"{self.MESH_OHMS_MIN:.1f} - {self.MESH_OHMS_MAX:.1f} Ohm",
-                    severity=TamperSeverity.CRITICAL_BREACH,
-                    description="Active mesh cut or drilled open circuit detected.",
-                )
-            )
+        numeric_checks = [
+            ("MESH_CONTINUITY_RESISTANCE", telemetry.mesh_resistance_ohms, f"{self.MESH_OHMS_MIN:.1f} - {self.MESH_OHMS_MAX:.1f} Ohm"),
+            ("OPTICAL_PHOTODIODE_LUX", telemetry.internal_light_lux, f"< {self.LIGHT_LUX_MAX:.1f} Lux"),
+            ("ACCELEROMETER_SHOCK", telemetry.accelerometer_g, f"< {self.ACCEL_G_MAX:.1f} g"),
+            ("THERMAL_SENSOR", telemetry.temperature_c, f"{self.TEMP_C_MIN:.1f} to {self.TEMP_C_MAX:.1f} C"),
+            ("MAGNETIC_HALL_EFFECT", telemetry.magnetic_field_gauss, f"< {self.MAGNET_GAUSS_MAX:.1f} Gauss"),
+            ("CORE_VOLTAGE_SUPERVISOR", telemetry.rail_voltage_v, f"{self.RAIL_V_MIN:.2f} - {self.RAIL_V_MAX:.2f} V"),
+            ("BACKUP_BATTERY", telemetry.backup_battery_v, f">= {self.BATTERY_V_MIN:.2f} V"),
+        ]
+        invalid = {name for name, value, nominal in numeric_checks if not self._finite(value)}
+        for name, value, nominal in numeric_checks:
+            if name in invalid:
+                breaches.append(self._invalid_breach(name, value, nominal))
 
-        # 3. Internal Photodiode Ambient Light
-        if t.internal_light_lux >= self.LIGHT_LUX_MAX and self.state != InterlockState.MAINTENANCE_AUTHORIZED:
-            breaches.append(
-                BreachDetail(
-                    sensor_name="OPTICAL_PHOTODIODE_LUX",
-                    observed_value=f"{t.internal_light_lux:.2f} Lux",
-                    nominal_range=f"< {self.LIGHT_LUX_MAX:.1f} Lux",
-                    severity=TamperSeverity.CRITICAL_BREACH,
-                    description="Enclosure light breach detected; internal cavity exposed to ambient light.",
-                )
-            )
+        if "MESH_CONTINUITY_RESISTANCE" not in invalid:
+            if telemetry.mesh_resistance_ohms < self.MESH_OHMS_MIN:
+                breaches.append(BreachDetail(
+                    "MESH_CONTINUITY_RESISTANCE", f"{telemetry.mesh_resistance_ohms:.1f} Ohm",
+                    f"{self.MESH_OHMS_MIN:.1f} - {self.MESH_OHMS_MAX:.1f} Ohm",
+                    TamperSeverity.CRITICAL_BREACH,
+                    "Active mesh resistance below the configured threshold.",
+                ))
+            elif telemetry.mesh_resistance_ohms > self.MESH_OHMS_MAX:
+                breaches.append(BreachDetail(
+                    "MESH_CONTINUITY_RESISTANCE", f"{telemetry.mesh_resistance_ohms:.1f} Ohm",
+                    f"{self.MESH_OHMS_MIN:.1f} - {self.MESH_OHMS_MAX:.1f} Ohm",
+                    TamperSeverity.CRITICAL_BREACH,
+                    "Active mesh resistance above the configured threshold.",
+                ))
 
-        # 4. Accelerometer / Shock / Drilling Vibration
-        if t.accelerometer_g >= self.ACCEL_G_MAX:
-            breaches.append(
-                BreachDetail(
-                    sensor_name="ACCELEROMETER_SHOCK",
-                    observed_value=f"{t.accelerometer_g:.2f} g",
-                    nominal_range=f"< {self.ACCEL_G_MAX:.1f} g",
-                    severity=TamperSeverity.CRITICAL_BREACH,
-                    description="High kinetic shock or drilling vibration detected.",
-                )
-            )
+        if "OPTICAL_PHOTODIODE_LUX" not in invalid and not maintenance_active:
+            if telemetry.internal_light_lux >= self.LIGHT_LUX_MAX:
+                breaches.append(BreachDetail(
+                    "OPTICAL_PHOTODIODE_LUX", f"{telemetry.internal_light_lux:.2f} Lux",
+                    f"< {self.LIGHT_LUX_MAX:.1f} Lux", TamperSeverity.CRITICAL_BREACH,
+                    "Internal light level reached the configured breach threshold.",
+                ))
 
-        # 5. Temperature Bounds (Cryogenic Freeze / Thermal Torch)
-        if t.temperature_c < self.TEMP_C_MIN:
-            breaches.append(
-                BreachDetail(
-                    sensor_name="THERMAL_SENSOR",
-                    observed_value=f"{t.temperature_c:.1f} C",
-                    nominal_range=f"{self.TEMP_C_MIN:.1f} to {self.TEMP_C_MAX:.1f} C",
-                    severity=TamperSeverity.CRITICAL_BREACH,
-                    description="Sub-zero cryogenic freeze attack detected (suspected SRAM cold boot attack).",
-                )
-            )
-        elif t.temperature_c > self.TEMP_C_MAX:
-            breaches.append(
-                BreachDetail(
-                    sensor_name="THERMAL_SENSOR",
-                    observed_value=f"{t.temperature_c:.1f} C",
-                    nominal_range=f"{self.TEMP_C_MIN:.1f} to {self.TEMP_C_MAX:.1f} C",
-                    severity=TamperSeverity.CRITICAL_BREACH,
-                    description="Extreme thermal cut / laser / heat torch attack detected.",
-                )
-            )
+        if "ACCELEROMETER_SHOCK" not in invalid and telemetry.accelerometer_g >= self.ACCEL_G_MAX:
+            breaches.append(BreachDetail(
+                "ACCELEROMETER_SHOCK", f"{telemetry.accelerometer_g:.2f} g",
+                f"< {self.ACCEL_G_MAX:.1f} g", TamperSeverity.CRITICAL_BREACH,
+                "Acceleration reached the configured breach threshold.",
+            ))
 
-        # 6. Magnetic Field Manipulation
-        if t.magnetic_field_gauss >= self.MAGNET_GAUSS_MAX:
-            breaches.append(
-                BreachDetail(
-                    sensor_name="MAGNETIC_HALL_EFFECT",
-                    observed_value=f"{t.magnetic_field_gauss:.1f} Gauss",
-                    nominal_range=f"< {self.MAGNET_GAUSS_MAX:.1f} Gauss",
-                    severity=TamperSeverity.CRITICAL_BREACH,
-                    description="External magnetic field manipulation detected (reed switch bypass attempt).",
-                )
-            )
+        if "THERMAL_SENSOR" not in invalid:
+            if telemetry.temperature_c < self.TEMP_C_MIN or telemetry.temperature_c > self.TEMP_C_MAX:
+                breaches.append(BreachDetail(
+                    "THERMAL_SENSOR", f"{telemetry.temperature_c:.1f} C",
+                    f"{self.TEMP_C_MIN:.1f} to {self.TEMP_C_MAX:.1f} C",
+                    TamperSeverity.CRITICAL_BREACH,
+                    "Temperature is outside the configured enclosure range.",
+                ))
 
-        # 7. Core Rail Voltage Glitching / Brownout
-        if t.rail_voltage_v < self.RAIL_V_MIN or t.rail_voltage_v > self.RAIL_V_MAX:
-            breaches.append(
-                BreachDetail(
-                    sensor_name="CORE_VOLTAGE_SUPERVISOR",
-                    observed_value=f"{t.rail_voltage_v:.3f} V",
-                    nominal_range=f"{self.RAIL_V_MIN:.2f} - {self.RAIL_V_MAX:.2f} V",
-                    severity=TamperSeverity.CRITICAL_BREACH,
-                    description="Power rail glitching, overvoltage, or brownout attack detected.",
-                )
-            )
+        if "MAGNETIC_HALL_EFFECT" not in invalid and telemetry.magnetic_field_gauss >= self.MAGNET_GAUSS_MAX:
+            breaches.append(BreachDetail(
+                "MAGNETIC_HALL_EFFECT", f"{telemetry.magnetic_field_gauss:.1f} Gauss",
+                f"< {self.MAGNET_GAUSS_MAX:.1f} Gauss", TamperSeverity.CRITICAL_BREACH,
+                "Magnetic field reached the configured breach threshold.",
+            ))
 
-        # 8. RTC / BBRAM Backup Battery Degradation
-        if t.backup_battery_v < self.BATTERY_V_MIN:
+        if "CORE_VOLTAGE_SUPERVISOR" not in invalid:
+            if telemetry.rail_voltage_v < self.RAIL_V_MIN or telemetry.rail_voltage_v > self.RAIL_V_MAX:
+                breaches.append(BreachDetail(
+                    "CORE_VOLTAGE_SUPERVISOR", f"{telemetry.rail_voltage_v:.3f} V",
+                    f"{self.RAIL_V_MIN:.2f} - {self.RAIL_V_MAX:.2f} V",
+                    TamperSeverity.CRITICAL_BREACH,
+                    "Power rail voltage is outside the configured range.",
+                ))
+
+        if "BACKUP_BATTERY" not in invalid and telemetry.backup_battery_v < self.BATTERY_V_MIN:
             degradations.append(
-                f"Backup RTC battery voltage low: {t.backup_battery_v:.2f}V (minimum threshold: {self.BATTERY_V_MIN:.2f}V)."
+                f"Backup battery voltage low: {telemetry.backup_battery_v:.2f} V "
+                f"(minimum {self.BATTERY_V_MIN:.2f} V)."
             )
 
-        # Determine State & Interlock Trigger
         if breaches:
             self.state = InterlockState.TAMPER_DETECTED
-            overall_severity = TamperSeverity.CRITICAL_BREACH
-            is_breached = True
-            requires_zeroization = True
             proof = self.execute_zeroization(trigger_source=breaches[0].sensor_name)
-            summary = f"TAMPER INTERLOCK TRIGGERED: {len(breaches)} breach condition(s) detected. Cryptographic zeroization executed."
-            log = f"[CRITICAL INTERLOCK] Zeroization completed in {proof.zeroization_latency_us} us. HMAC: {proof.audit_hmac_sha256}"
-        elif degradations:
+            return InterlockEvaluationResult(
+                interlock_state=self.state,
+                overall_severity=TamperSeverity.CRITICAL_BREACH,
+                is_breached=True,
+                requires_zeroization=True,
+                breaches=breaches,
+                degradations=degradations,
+                zeroization_proof=proof,
+                action_summary=(
+                    f"Tamper response simulated: {len(breaches)} breach condition(s) detected; "
+                    "the model entered zeroized-lockdown state."
+                ),
+                system_log="[SIMULATION] Zeroization state transition recorded; no hardware memory was erased.",
+            )
+
+        if degradations:
             if self.state != InterlockState.MAINTENANCE_AUTHORIZED:
                 self.state = InterlockState.SENSOR_DEGRADED
-            overall_severity = TamperSeverity.LOW
-            is_breached = False
-            requires_zeroization = False
-            proof = None
-            summary = f"SENSOR DEGRADATION WARNING: {len(degradations)} operational warning(s)."
-            log = "[WARNING] System armed with degraded auxiliary sensor."
-        else:
-            if self.state not in (InterlockState.MAINTENANCE_AUTHORIZED, InterlockState.ZEROIZED_LOCKDOWN):
-                self.state = InterlockState.ARMED_SECURE
-            overall_severity = TamperSeverity.NONE
-            is_breached = False
-            requires_zeroization = False
-            proof = None
-            summary = "SYSTEM ARMED & SECURE: All active tamper sensor envelopes nominal."
-            log = "[OK] Enclosure integrity verified nominal."
+            return InterlockEvaluationResult(
+                interlock_state=self.state,
+                overall_severity=TamperSeverity.LOW,
+                is_breached=False,
+                requires_zeroization=False,
+                breaches=[],
+                degradations=degradations,
+                action_summary=f"Sensor degradation warning: {len(degradations)} warning(s).",
+                system_log="[WARNING] Simulation remains active with degraded auxiliary telemetry.",
+            )
 
+        if self.state not in (InterlockState.MAINTENANCE_AUTHORIZED, InterlockState.ZEROIZED_LOCKDOWN):
+            self.state = InterlockState.ARMED_SECURE
         return InterlockEvaluationResult(
             interlock_state=self.state,
-            overall_severity=overall_severity,
-            is_breached=is_breached,
-            requires_zeroization=requires_zeroization,
-            breaches=breaches,
-            degradations=degradations,
-            zeroization_proof=proof,
-            action_summary=summary,
-            system_log=log,
+            overall_severity=TamperSeverity.NONE,
+            is_breached=False,
+            requires_zeroization=False,
+            action_summary="All configured sensor thresholds are nominal.",
+            system_log="[OK] No simulated tamper condition detected.",
         )
 
 
@@ -367,9 +352,6 @@ def evaluate_chassis_telemetry(
     backup_battery_v: float = 3.00,
     controller: Optional[ChassisInterlockController] = None,
 ) -> InterlockEvaluationResult:
-    """
-    Standard entry point evaluating hardware sensor telemetry.
-    """
     ctl = controller or ChassisInterlockController()
     telemetry = SensorTelemetry(
         microswitch_open=bool(microswitch_open),
@@ -384,37 +366,50 @@ def evaluate_chassis_telemetry(
     return ctl.evaluate_telemetry(telemetry)
 
 
-def calculate_metrics(**kwargs) -> Dict[str, Any]:
+def _first_present(mapping: Dict[str, Any], *keys: str, default: Any = None) -> Any:
+    for key in keys:
+        if key in mapping and mapping[key] is not None and mapping[key] != "":
+            return mapping[key]
+    return default
+
+
+def calculate_metrics(**kwargs: Any) -> Dict[str, Any]:
+    """Compatibility wrapper accepting common telemetry aliases.
+
+    A ``controller`` keyword can be supplied to preserve state across calls.
     """
-    Unified entry point for backward compatibility and automated assessment pipelines.
-    """
-    def _bool(val: Any) -> bool:
-        if isinstance(val, bool):
-            return val
-        if isinstance(val, (int, float)):
-            return val > 0
-        if isinstance(val, str):
-            return val.strip().lower() in ("true", "1", "yes", "open", "breach", "alarm")
+
+    def _bool(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value > 0
+        if isinstance(value, str):
+            return value.strip().lower() in {"true", "1", "yes", "open", "breach", "alarm"}
         return False
 
-    def _float(val: Any, default: float) -> float:
-        if val is None or val == "":
+    def _float(value: Any, default: float) -> float:
+        if value is None or value == "":
             return default
         try:
-            return float(val)
+            return float(value)
         except (ValueError, TypeError):
-            return default
+            return math.nan
 
-    microswitch = _bool(kwargs.get("microswitch_open") or kwargs.get("microswitch") or kwargs.get("lid_open") or kwargs.get("lid"))
-    mesh_ohms = _float(kwargs.get("mesh_resistance_ohms") or kwargs.get("mesh_ohms") or kwargs.get("mesh") or kwargs.get("primary_metric"), 1000.0)
-    light_lux = _float(kwargs.get("internal_light_lux") or kwargs.get("light_lux") or kwargs.get("light"), 0.0)
-    accel_g = _float(kwargs.get("accelerometer_g") or kwargs.get("accel_g") or kwargs.get("acceleration"), 0.0)
-    temp_c = _float(kwargs.get("temperature_c") or kwargs.get("temperature") or kwargs.get("temp"), 25.0)
-    magnet_g = _float(kwargs.get("magnetic_field_gauss") or kwargs.get("magnetic_gauss") or kwargs.get("magnet"), 0.5)
-    rail_v = _float(kwargs.get("rail_voltage_v") or kwargs.get("rail_voltage") or kwargs.get("voltage"), 3.30)
-    battery_v = _float(kwargs.get("backup_battery_v") or kwargs.get("battery_v") or kwargs.get("battery"), 3.00)
+    controller = kwargs.get("controller")
+    if controller is not None and not isinstance(controller, ChassisInterlockController):
+        raise TypeError("controller must be a ChassisInterlockController")
 
-    res = evaluate_chassis_telemetry(
+    microswitch = _bool(_first_present(kwargs, "microswitch_open", "microswitch", "lid_open", "lid", default=False))
+    mesh_ohms = _float(_first_present(kwargs, "mesh_resistance_ohms", "mesh_ohms", "mesh", "primary_metric", default=1000.0), 1000.0)
+    light_lux = _float(_first_present(kwargs, "internal_light_lux", "light_lux", "light", default=0.0), 0.0)
+    accel_g = _float(_first_present(kwargs, "accelerometer_g", "accel_g", "acceleration", default=0.0), 0.0)
+    temp_c = _float(_first_present(kwargs, "temperature_c", "temperature", "temp", default=25.0), 25.0)
+    magnet_g = _float(_first_present(kwargs, "magnetic_field_gauss", "magnetic_gauss", "magnet", default=0.5), 0.5)
+    rail_v = _float(_first_present(kwargs, "rail_voltage_v", "rail_voltage", "voltage", default=3.30), 3.30)
+    battery_v = _float(_first_present(kwargs, "backup_battery_v", "battery_v", "battery", default=3.00), 3.00)
+
+    return evaluate_chassis_telemetry(
         microswitch_open=microswitch,
         mesh_resistance_ohms=mesh_ohms,
         internal_light_lux=light_lux,
@@ -423,40 +418,47 @@ def calculate_metrics(**kwargs) -> Dict[str, Any]:
         magnetic_field_gauss=magnet_g,
         rail_voltage_v=rail_v,
         backup_battery_v=battery_v,
-    )
-    return res.to_dict()
+        controller=controller,
+    ).to_dict()
 
 
 def process_batch_csv(input_csv: str, output_csv: str) -> int:
-    """Processes sensor log CSV and writes evaluation and zeroization audit results."""
-    with open(input_csv, mode="r", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
+    """Evaluate CSV telemetry rows and write a result CSV.
+
+    One controller is reused so lockdown state and the simulator's monotonic event
+    counter persist across the ordered log.
+    """
+    with open(input_csv, mode="r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
         fieldnames = list(reader.fieldnames or [])
         rows = list(reader)
 
-    if not rows:
-        return 0
-
-    ctl = ChassisInterlockController()
-    out_rows = []
-    for r in rows:
-        res = calculate_metrics(**r)
-        merged = dict(r)
-        merged["interlock_state"] = res["interlock_state"]
-        merged["overall_severity"] = res["overall_severity"]
-        merged["is_breached"] = res["is_breached"]
-        merged["requires_zeroization"] = res["requires_zeroization"]
-        merged["total_breaches"] = len(res.get("breaches", []))
-        merged["action_summary"] = res.get("action_summary", "")
-        out_rows.append(merged)
-
     out_fields = list(dict.fromkeys(fieldnames + [
-        "interlock_state", "overall_severity", "is_breached",
-        "requires_zeroization", "total_breaches", "action_summary"
+        "interlock_state",
+        "overall_severity",
+        "is_breached",
+        "requires_zeroization",
+        "total_breaches",
+        "action_summary",
     ]))
 
-    with open(output_csv, mode="w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=out_fields)
+    controller = ChassisInterlockController()
+    out_rows = []
+    for row in rows:
+        result = calculate_metrics(controller=controller, **row)
+        merged = dict(row)
+        merged.update({
+            "interlock_state": result["interlock_state"],
+            "overall_severity": result["overall_severity"],
+            "is_breached": result["is_breached"],
+            "requires_zeroization": result["requires_zeroization"],
+            "total_breaches": len(result.get("breaches", [])),
+            "action_summary": result.get("action_summary", ""),
+        })
+        out_rows.append(merged)
+
+    with open(output_csv, mode="w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=out_fields)
         writer.writeheader()
         writer.writerows(out_rows)
 
