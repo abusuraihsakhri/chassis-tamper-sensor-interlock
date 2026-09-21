@@ -1,5 +1,7 @@
 # Chassis Tamper Sensor Interlock Simulator
 
+### [Open the Live Application →](https://abusuraihsakhri.github.io/chassis-tamper-sensor-interlock/)
+
 A Python simulator for evaluating chassis-tamper sensor telemetry against configurable interlock thresholds. It supports single-sample evaluation, CSV batch processing, a command-line interface, and a browser UI that runs the Python logic through Pyodide.
 
 > **Scope:** This repository is a software simulation. It does not control physical hardware, perform real cryptographic key erasure, or establish FIPS 140-3 / NIST SP 800-88 certification or compliance.
@@ -16,7 +18,7 @@ A Python simulator for evaluating chassis-tamper sensor telemetry against config
 
 ## Use the browser app
 
-After GitHub Pages deployment, open the repository's Pages site. Enter sensor values and select **Analyze telemetry**. The page loads Pyodide from a public CDN and runs the repository's Python module locally in the browser; entered telemetry is not sent to this repository.
+Open the live application above. Enter sensor values and select **Analyze telemetry**. The page loads Pyodide from a public CDN and runs the repository's Python module locally in the browser; entered telemetry is not sent to this repository.
 
 ## Command line
 
