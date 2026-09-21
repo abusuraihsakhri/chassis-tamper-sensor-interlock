@@ -4,24 +4,26 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chassis-tamper-sensor-interlock"
-version = "2.0.0"
-description = "Chassis Intrusion Detection & Zeroization Interlock Engine"
+version = "2.1.0"
+description = "Simulator for evaluating chassis tamper sensor telemetry and interlock states"
 readme = "README.md"
-authors = [{ name = "Dr. Abu Suraih Sakhri", email = "abusuraih@example.com" }]
+authors = [{ name = "Abu Suraih Sakhri" }]
 license = { text = "MIT" }
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
-    "Topic :: Security/Cryptography",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security",
 ]
 requires-python = ">=3.9"
 dependencies = []
 
 [project.scripts]
-chassis-tamper-sensor-interlock = "chassis_tamper.cli:main"
+chassis-tamper-sensor-interlock = "cli:main"
 
 [project.urls]
 Homepage = "https://github.com/abusuraihsakhri/chassis-tamper-sensor-interlock"
 Repository = "https://github.com/abusuraihsakhri/chassis-tamper-sensor-interlock.git"
+
+[tool.setuptools]
+py-modules = ["chassis_tamper_interlock", "chassis_tamper_app", "cli"]

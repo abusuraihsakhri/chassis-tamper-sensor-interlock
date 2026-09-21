@@ -1,55 +1,65 @@
-# Chassis Tamper Sensor Interlock & Cryptographic Zeroization Engine
+# Chassis Tamper Sensor Interlock Simulator
 
-> **Domain:** Hardware Security, Cryptographic Module Protection & Critical Infrastructure  
-> **Security Standards:** FIPS 140-3 Physical Security Level 4, NIST SP 800-88 Rev 1 (Guidelines for Media Sanitization), ISO/IEC 19790
+A Python simulator for evaluating chassis-tamper sensor telemetry against configurable interlock thresholds. It supports single-sample evaluation, CSV batch processing, a command-line interface, and a browser UI that runs the Python logic through Pyodide.
 
----
+> **Scope:** This repository is a software simulation. It does not control physical hardware, perform real cryptographic key erasure, or establish FIPS 140-3 / NIST SP 800-88 certification or compliance.
 
-## 📖 System Overview
+## Features
 
-The **Chassis Tamper Sensor Interlock** is a high-assurance physical security engine implementing FIPS 140-3 Level 4 envelope protection for cryptographic hardware modules (HSMs, secure enclaves, medical diagnostic units). It continuously monitors a multi-modal physical sensor array and executes deterministic finite state machine (FSM) transitions, triggering autonomous cryptographic zeroization when physical breach envelopes are crossed.
+- Evaluates lid, mesh resistance, light, acceleration, temperature, magnetic field, rail voltage, and backup-battery telemetry.
+- Uses fail-safe handling for invalid or non-finite numeric input.
+- Preserves interlock state across ordered CSV rows during batch processing.
+- Records a simulated lockdown/zeroization response for breach conditions.
+- Provides JSON and human-readable CLI output.
+- Includes a compact responsive GitHub Pages interface with light and dark themes.
+- Has no runtime Python package dependencies.
 
-### Monitored Physical Sensor Array
+## Use the browser app
 
-| Sensor Channel | Nominal Envelope | Breach Condition | Attack Vector Mitigated |
-|:---|:---|:---|:---|
-| **Microswitch Interlock** | `Closed` (0) | `Open` (1) | Physical lid/cover removal |
-| **Conductive Mesh Barrier** | $800\,\Omega \le R \le 1200\,\Omega$ | $R < 500\,\Omega \lor R > 1500\,\Omega$ | Drill-through, micro-probing, cutting |
-| **Internal Ambient Photodiode**| $< 0.5\text{ lux}$ | $\ge 2.0\text{ lux}$ | Light intrusion via chassis aperture |
-| **3-Axis Accelerometer** | $< 1.5\text{ g}$ | $\ge 4.0\text{ g}$ | Ballistic attack, physical extraction |
-| **Thermal Envelope** | $-20^\circ\text{C} \le T \le +70^\circ\text{C}$ | $T < -30^\circ\text{C} \lor T > +85^\circ\text{C}$ | Cryogenic attack, thermal probing |
-| **Hall-Effect Magnetometer** | $< 5.0\text{ Gauss}$ | $\ge 20.0\text{ Gauss}$ | Magnetic sensor spoofing / reed defeat |
-| **Power Rail & Battery** | $V_{rail} \ge 3.0\text{V}, V_{bat} \ge 2.5\text{V}$ | $V_{rail} < 2.7\text{V} \land V_{bat} < 2.2\text{V}$ | Brownout / power-glitching attack |
+After GitHub Pages deployment, open the repository's Pages site. Enter sensor values and select **Analyze telemetry**. The page loads Pyodide from a public CDN and runs the repository's Python module locally in the browser; entered telemetry is not sent to this repository.
 
----
+## Command line
 
-## 💻 CLI Quickstart & Usage
+Python 3.9 or newer is required.
 
-### 1. Evaluate Sensor Array Telemetry
 ```bash
-python cli.py telemetry --microswitch 0 --mesh 1000.0 --light 0.0 --accel 0.1 --temp 25.0 --battery 3.0
+python -m pip install .
+chassis-tamper-sensor-interlock eval --mesh-ohms 1000 --temp-c 25 --json
 ```
 
-### 2. Interactive Sensor Simulation Console
+Other commands:
+
 ```bash
-python cli.py interactive
+chassis-tamper-sensor-interlock interactive
+chassis-tamper-sensor-interlock batch -i sample.csv -o results.csv
+chassis-tamper-sensor-interlock zeroize --reason TEST_EVENT --json
 ```
 
-### 3. Immediate Cryptographic Zeroization Command
+The `zeroize` command records a **simulated** response only. It does not erase memory or keys.
+
+## Development
+
 ```bash
-python cli.py zeroize
+python -m pip install pytest build
+python -m pytest -q
+python -m build
+python -m pip check
 ```
 
-### 4. Batch Process Sensor Telemetry CSV Log
-```bash
-python cli.py batch -i sample.csv -o out_results.csv
-```
+CI tests Python 3.10, 3.11, and 3.12 and also checks package installation and the installed console command.
 
----
+## Technology
 
-## 🧪 Verification & Testing
+- Python standard library
+- `pytest` for tests
+- Pyodide for browser-side Python execution
+- Static HTML/CSS/JavaScript for the GitHub Pages UI
+- GitHub Actions for CI and Pages deployment
 
-Execute comprehensive unit and FSM integrity tests:
-```bash
-python -m pytest -p no:zarr
-```
+## Browser compatibility
+
+The web interface targets current versions of Chrome, Edge, Firefox, and Safari with WebAssembly and JavaScript enabled. Initial load requires network access to retrieve the Pyodide runtime.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

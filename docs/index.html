@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Chassis Tamper Sensor Interlock Simulator</title>
+  <style>
+    :root {
+      --bg: #f5f7fb; --panel: #ffffff; --panel-2: #f8fafc; --text: #172033;
+      --muted: #637086; --line: #dce3ee; --accent: #295bd6; --accent-2: #1f49ad;
+      --ok: #147d56; --warn: #9a6700; --danger: #b42318; --shadow: 0 12px 32px rgba(23,32,51,.08);
+    }
+    html[data-theme="dark"] {
+      --bg: #0f141d; --panel: #171e2a; --panel-2: #1d2634; --text: #edf3fb;
+      --muted: #a5b1c2; --line: #2b3748; --accent: #7ca3ff; --accent-2: #9ab8ff;
+      --ok: #67d6a6; --warn: #f5c451; --danger: #ff8a82; --shadow: 0 12px 32px rgba(0,0,0,.24);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100dvh; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+    button, input { font: inherit; }
+    .shell { width: min(1180px, calc(100% - 28px)); margin: 0 auto; padding: 18px 0; min-height: 100dvh; display: grid; grid-template-rows: auto 1fr auto; gap: 12px; }
+    header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    h1 { margin: 0; font-size: clamp(1.25rem, 2.2vw, 1.9rem); letter-spacing: -.025em; }
+    .subtitle { margin: 4px 0 0; color: var(--muted); font-size: .92rem; max-width: 760px; }
+    .theme { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 10px; padding: 8px 11px; cursor: pointer; }
+    main { min-height: 0; display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(300px, .65fr); gap: 12px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+    .inputs { padding: 14px; display: flex; flex-direction: column; min-height: 0; }
+    .section-head { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom: 10px; }
+    .section-head h2 { margin:0; font-size:1rem; }
+    .runtime { font-size:.78rem; color:var(--muted); }
+    .grid { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 9px 10px; }
+    .field { background:var(--panel-2); border:1px solid var(--line); border-radius:11px; padding:9px 10px; }
+    .field label { display:block; font-weight:650; font-size:.79rem; margin-bottom:5px; }
+    .field small { display:block; color:var(--muted); font-size:.7rem; margin-top:4px; }
+    input[type="number"] { width:100%; border:1px solid var(--line); background:var(--panel); color:var(--text); border-radius:8px; padding:7px 8px; outline:none; }
+    input:focus-visible, button:focus-visible { outline:3px solid color-mix(in srgb, var(--accent) 35%, transparent); outline-offset:2px; }
+    .switch-row { height:100%; display:flex; justify-content:space-between; align-items:center; gap:10px; }
+    .switch-row input { width:20px; height:20px; accent-color:var(--accent); }
+    .actions { display:flex; gap:8px; margin-top:10px; }
+    .primary, .secondary { border-radius:10px; padding:9px 14px; cursor:pointer; font-weight:700; border:1px solid transparent; }
+    .primary { flex:1; background:var(--accent); color:#fff; }
+    html[data-theme="dark"] .primary { color:#0d1420; }
+    .primary:hover { background:var(--accent-2); }
+    .primary:disabled { opacity:.55; cursor:not-allowed; }
+    .secondary { background:var(--panel); color:var(--text); border-color:var(--line); }
+    .result { padding:14px; display:flex; flex-direction:column; min-height:0; }
+    .status { border:1px solid var(--line); background:var(--panel-2); border-radius:13px; padding:12px; }
+    .status-top { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+    .state { font-size:1.08rem; font-weight:800; letter-spacing:.01em; }
+    .pill { border-radius:999px; padding:4px 8px; font-size:.72rem; font-weight:800; background:var(--panel); border:1px solid var(--line); }
+    .metrics { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin-top:10px; }
+    .metric { border-top:1px solid var(--line); padding-top:8px; }
+    .metric span { color:var(--muted); font-size:.72rem; display:block; }
+    .metric strong { font-size:.92rem; }
+    .details { margin-top:10px; overflow:auto; min-height:0; }
+    .details h3 { margin:0 0 7px; font-size:.84rem; }
+    .details ul { margin:0; padding-left:18px; font-size:.8rem; line-height:1.4; }
+    .empty { color:var(--muted); font-size:.82rem; }
+    .notice { margin-top:auto; padding-top:10px; color:var(--muted); font-size:.71rem; line-height:1.35; }
+    footer { color:var(--muted); font-size:.72rem; text-align:center; }
+    .danger { color:var(--danger); } .ok { color:var(--ok); } .warn { color:var(--warn); }
+    @media (max-width: 780px) {
+      .shell { width:min(100% - 18px, 720px); padding:10px 0; }
+      main { grid-template-columns:1fr; }
+      .grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .result { min-height:260px; }
+    }
+    @media (max-width: 480px) {
+      header { align-items:center; }
+      .subtitle { font-size:.79rem; }
+      .grid { gap:7px; }
+      .field { padding:8px; }
+      .field small { display:none; }
+      input[type="number"] { padding:7px; }
+      .actions { position:sticky; bottom:6px; background:var(--panel); padding-top:6px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div>
+        <h1>Chassis Tamper Sensor Interlock Simulator</h1>
+        <p class="subtitle">Evaluate enclosure telemetry against the repository's configured thresholds. The model is a simulator; it does not control hardware or erase real cryptographic material.</p>
+      </div>
+      <button class="theme" id="themeButton" type="button" aria-label="Toggle color theme">Dark</button>
+    </header>
+
+    <main>
+      <section class="card inputs" aria-labelledby="inputHeading">
+        <div class="section-head">
+          <h2 id="inputHeading">Sensor telemetry</h2>
+          <span class="runtime" id="runtimeStatus">Loading Python runtime…</span>
+        </div>
+        <div class="grid">
+          <div class="field">
+            <div class="switch-row">
+              <div><label for="microswitch">Lid microswitch</label><small>Closed is nominal</small></div>
+              <input id="microswitch" type="checkbox" aria-label="Lid microswitch open" />
+            </div>
+          </div>
+          <div class="field"><label for="mesh">Mesh resistance</label><input id="mesh" type="number" step="any" value="1000" /><small>750–1250 Ω</small></div>
+          <div class="field"><label for="light">Internal light</label><input id="light" type="number" step="any" value="0" /><small>&lt; 2.0 lux</small></div>
+          <div class="field"><label for="accel">Acceleration</label><input id="accel" type="number" step="any" value="0" /><small>&lt; 3.5 g</small></div>
+          <div class="field"><label for="temp">Temperature</label><input id="temp" type="number" step="any" value="25" /><small>−20 to 70 °C</small></div>
+          <div class="field"><label for="magnet">Magnetic field</label><input id="magnet" type="number" step="any" value="0.5" /><small>&lt; 8.0 Gauss</small></div>
+          <div class="field"><label for="rail">Core rail voltage</label><input id="rail" type="number" step="any" value="3.3" /><small>3.00–3.60 V</small></div>
+          <div class="field"><label for="battery">Backup battery</label><input id="battery" type="number" step="any" value="3.0" /><small>≥ 2.40 V</small></div>
+        </div>
+        <div class="actions">
+          <button class="primary" id="analyzeButton" type="button" disabled>Analyze telemetry</button>
+          <button class="secondary" id="resetButton" type="button">Reset</button>
+        </div>
+      </section>
+
+      <aside class="card result" aria-live="polite">
+        <div class="section-head"><h2>Evaluation</h2><span class="pill" id="severityPill">READY</span></div>
+        <div class="status">
+          <div class="status-top"><span class="state" id="stateText">Awaiting input</span></div>
+          <div class="metrics">
+            <div class="metric"><span>Breach</span><strong id="breachText">—</strong></div>
+            <div class="metric"><span>Response</span><strong id="responseText">—</strong></div>
+          </div>
+        </div>
+        <div class="details" id="details"><p class="empty">Load the runtime, then select <strong>Analyze telemetry</strong>.</p></div>
+        <p class="notice">This browser tool runs the same Python threshold logic with Pyodide. It is intended for testing and demonstration, not security certification, hardware interlocking, or actual key zeroization.</p>
+      </aside>
+    </main>
+
+    <footer>All processing occurs in the browser after the Python runtime loads.</footer>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const defaults = { mesh: 1000, light: 0, accel: 0, temp: 25, magnet: 0.5, rail: 3.3, battery: 3.0 };
+    let pyodide;
+
+    function setTheme(theme) {
+      document.documentElement.dataset.theme = theme;
+      $('themeButton').textContent = theme === 'light' ? 'Dark' : 'Light';
+      localStorage.setItem('theme', theme);
+    }
+    const savedTheme = localStorage.getItem('theme');
+    setTheme(savedTheme === 'dark' ? 'dark' : 'light');
+    $('themeButton').addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'));
+
+    function numeric(id) {
+      const value = $(id).value.trim();
+      return value === '' ? null : Number(value);
+    }
+
+    function render(result) {
+      $('stateText').textContent = result.interlock_state;
+      $('severityPill').textContent = result.overall_severity;
+      $('severityPill').className = 'pill ' + (result.is_breached ? 'danger' : result.degradations.length ? 'warn' : 'ok');
+      $('breachText').textContent = result.is_breached ? 'Detected' : 'No';
+      $('breachText').className = result.is_breached ? 'danger' : 'ok';
+      $('responseText').textContent = result.requires_zeroization ? 'Simulated lockdown' : 'None';
+
+      const items = [];
+      for (const breach of result.breaches) items.push(`<li><strong>${escapeHtml(breach.sensor_name)}</strong>: ${escapeHtml(String(breach.observed_value))} — ${escapeHtml(breach.description)}</li>`);
+      for (const warning of result.degradations) items.push(`<li>${escapeHtml(warning)}</li>`);
+      $('details').innerHTML = items.length
+        ? `<h3>${result.breaches.length ? 'Findings' : 'Warnings'}</h3><ul>${items.join('')}</ul>`
+        : `<p class="empty">${escapeHtml(result.action_summary)}</p>`;
+    }
+
+    function escapeHtml(value) {
+      return value.replace(/[&<>'"]/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+    }
+
+    $('resetButton').addEventListener('click', () => {
+      $('microswitch').checked = false;
+      Object.entries(defaults).forEach(([id, value]) => $(id).value = value);
+      $('stateText').textContent = 'Awaiting input';
+      $('severityPill').textContent = 'READY';
+      $('severityPill').className = 'pill';
+      $('breachText').textContent = '—';
+      $('breachText').className = '';
+      $('responseText').textContent = '—';
+      $('details').innerHTML = '<p class="empty">Select <strong>Analyze telemetry</strong> to evaluate the current values.</p>';
+    });
+
+    $('analyzeButton').addEventListener('click', async () => {
+      const payload = {
+        microswitch_open: $('microswitch').checked,
+        mesh_resistance_ohms: numeric('mesh'), internal_light_lux: numeric('light'),
+        accelerometer_g: numeric('accel'), temperature_c: numeric('temp'),
+        magnetic_field_gauss: numeric('magnet'), rail_voltage_v: numeric('rail'),
+        backup_battery_v: numeric('battery')
+      };
+      $('analyzeButton').disabled = true;
+      $('analyzeButton').textContent = 'Analyzing…';
+      try {
+        pyodide.globals.set('telemetry_json', JSON.stringify(payload));
+        const output = await pyodide.runPythonAsync(`
+import json
+from chassis_tamper_interlock import calculate_metrics
+_values = json.loads(telemetry_json)
+json.dumps(calculate_metrics(**_values))
+        `);
+        render(JSON.parse(output));
+      } catch (error) {
+        $('stateText').textContent = 'Evaluation error';
+        $('severityPill').textContent = 'ERROR';
+        $('severityPill').className = 'pill danger';
+        $('details').innerHTML = `<p class="empty">${escapeHtml(String(error))}</p>`;
+      } finally {
+        $('analyzeButton').disabled = false;
+        $('analyzeButton').textContent = 'Analyze telemetry';
+      }
+    });
+
+    (async () => {
+      try {
+        pyodide = await loadPyodide();
+        const source = await fetch('./chassis_tamper_interlock.py', { cache: 'no-store' });
+        if (!source.ok) throw new Error(`Python source could not be loaded (${source.status})`);
+        pyodide.FS.writeFile('chassis_tamper_interlock.py', await source.text());
+        await pyodide.runPythonAsync('import chassis_tamper_interlock');
+        $('runtimeStatus').textContent = 'Python runtime ready';
+        $('runtimeStatus').className = 'runtime ok';
+        $('analyzeButton').disabled = false;
+      } catch (error) {
+        $('runtimeStatus').textContent = 'Runtime failed to load';
+        $('runtimeStatus').className = 'runtime danger';
+        $('details').innerHTML = `<p class="empty">${escapeHtml(String(error))}. Check the network connection and reload.</p>`;
+      }
+    })();
+  </script>
+</body>
+</html>
